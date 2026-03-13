@@ -38,19 +38,36 @@ Program ini mengimplementasikan **Rotasi Citra dengan Efek *Swirl*** (*melintir*
 
 ## 🖼️ Tampilan Antarmuka Aplikasi (UI)
 
-Aplikasi ini dibangun menggunakan **Tkinter** dan menampilkan tiga panel gambar secara berdampingan.
+Aplikasi ini dibangun menggunakan **Tkinter** dengan tata letak tiga kolom yang menampilkan citra asli dan kedua hasil rotasi secara berdampingan. Terdapat dua tombol utama: **"Pilih Gambar"** di bagian atas dan **"Simpan Hasil Rotasi"** di bagian bawah.
 
-![Tampilan GUI Aplikasi Rotasi Citra](img/gui1.png)
+---
 
-> *Tampilan awal aplikasi*
+### 1. Tampilan Awal
 
-![Tampilan GUI Aplikasi Rotasi Citra](img/gui2.png)
+![Tampilan awal aplikasi](img/gui1.png)
 
-> *Tampilan setelah memilih gambar*
+Saat aplikasi pertama kali dibuka, ketiga panel preview (**Citra Asli**, **Tanpa Interpolasi**, **Dengan Interpolasi**) masih kosong/blank. Hanya label nama panel yang terlihat. Tombol **"Pilih Gambar"** aktif dan siap diklik, sedangkan tombol **"Simpan Hasil Rotasi"** belum dapat digunakan.
 
-![Tampilan GUI Aplikasi Rotasi Citra](img/gui3.png)
+---
 
-> *Tampilan setelah memproses gambar*
+### 2. Tampilan Saat Memilih Gambar
+
+![Tampilan saat dialog pemilihan file terbuka](img/gui2.png)
+
+Ketika tombol **"Pilih Gambar"** diklik, dialog file explorer sistem operasi akan muncul. Pengguna dapat menelusuri direktori dan memilih file gambar berekstensi **`.jpg`, `.jpeg`,** atau **`.png`**. Setelah file dipilih dan tombol **"Open"** ditekan, aplikasi langsung memulai pemrosesan rotasi secara otomatis.
+
+---
+
+### 3. Tampilan Setelah Pemrosesan Selesai
+
+![Tampilan setelah hasil rotasi ditampilkan](img/gui3.png)
+
+Setelah pemrosesan selesai, ketiga panel terisi penuh:
+- **Panel kiri — Citra Asli:** menampilkan gambar input tanpa modifikasi.
+- **Panel tengah — Tanpa Interpolasi:** hasil rotasi *swirl* menggunakan *forward mapping*; terlihat ada area piksel kosong (putih) akibat celah pemetaan.
+- **Panel kanan — Dengan Interpolasi:** hasil rotasi *swirl* menggunakan *backward mapping + interpolasi bilinear*; gambar tampak padat, halus, dan bebas lubang.
+
+Tombol **"Simpan Hasil Rotasi"** kini aktif dan dapat diklik untuk menyimpan kedua gambar hasil ke direktori pilihan pengguna.
 
 ### Contoh Hasil Pemrosesan
 
