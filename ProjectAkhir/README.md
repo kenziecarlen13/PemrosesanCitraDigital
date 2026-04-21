@@ -1,135 +1,101 @@
-# ProjectAkhir – Digital Image Processing
+<div align="center">
 
-## Overview
+# Face Privacy Filter
 
-`img_filter.py` is a lightweight Python application that processes images using a series of computer‑vision filters. It reads source images from the `input/` directory, applies transformations such as grayscale conversion, Gaussian blur, edge detection, and histogram equalisation, and writes the processed results to the `result/` folder.
+**Proyek Akhir — Pemrosesan Citra Digital**
 
----
+Aplikasi proteksi privasi wajah berbasis Python menggunakan *Multiscale Haar Cascade Detection* dan *Alpha Blending* untuk menghasilkan efek sensor yang halus dan natural.
 
-## Environment
+![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?style=flat-square&logo=python&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-Haar%20Cascade-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-Komputasi%20Piksel-013243?style=flat-square&logo=numpy&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)
 
-| Component | Details |
-|-----------|---------|
-| **Language** | Python 3.10+ |
-| **OS** | Windows 10/11 (tested) |
-| **Core Libraries** | `opencv‑python` (cv2), `numpy`, `matplotlib` (optional) |
-| **Package Manager** | `pip` |
-| **Installation** | `pip install -r requirements.txt` (or `pip install opencv-python numpy matplotlib`) |
+</div>
 
 ---
 
-## Installation
+## Deskripsi
 
-```bash
-# Clone the repository (if applicable)
-# cd ProjectAkhir
-# Install dependencies
-pip install -r requirements.txt
+**Face Privacy Filter** mendeteksi wajah secara otomatis pada gambar maupun video menggunakan dua model **Haar Cascade** bawaan OpenCV — satu untuk wajah frontal, satu untuk wajah profil samping — lalu menerapkan sensor berbasis *Alpha Blending* yang menghasilkan transisi gradual antara area wajah yang diblur dan latar belakang asli, tanpa tepi piksel yang terlihat kasar.
+
+Pipeline deteksi menggunakan tiga jalur secara bersamaan: wajah depan, profil kiri, dan profil kanan (via *horizontal mirror*), sehingga wajah yang tidak menghadap kamera pun tetap terdeteksi. Hasil gabungan ketiga jalur difilter menggunakan **IoU-based Overlap Suppression** agar satu wajah tidak diblur dua kali oleh classifier yang berbeda.
+
+---
+
+
+## Penjelasan Alur
+
+| No | Tahap | Detail Implementasi |
+|---|---|---|
+| **1** | **Input** | GUI Tkinter `filedialog` — memilih file gambar atau video. Loop otomatis menawarkan proses file berikutnya setelah selesai. |
+| **2** | **Preprocessing** | Frame dikonversi BGR → Grayscale → `cv2.equalizeHist()` untuk meningkatkan kontras sebelum deteksi. |
+| **3** | **Detection (3-way Haar)** | `haarcascade_frontalface_default` untuk wajah depan; `haarcascade_profileface` untuk profil kiri; cascade yang sama dijalankan pada frame *horizontal flip* lalu koordinat dikembalikan untuk profil kanan. |
+| **4** | **IoU Suppression** | Semua deteksi dari tiga jalur digabung, lalu box yang tumpang tindih melebihi ambang `IoU = 0.40` dihapus — box dengan area lebih besar dipertahankan. |
+| **5** | **Ellipse Masking** | Kanvas hitam dibuat, lalu `cv2.ellipse(FILLED)` digambar untuk setiap wajah. Pusat elips digeser 5% ke bawah agar menutupi dagu secara proporsional. |
+| **6** | **Feathering** | Masker elips dihaluskan tepinya dengan `cv2.GaussianBlur(kernel=51)`, menghasilkan gradasi halus dari area tersensor ke area asli. |
+| **7** | **Alpha Blending** | Mask dinormalisasi ke `float [0.0–1.0]` sebagai bobot `α`. Frame asli di-blur terpisah dengan kernel besar (`kernel=125`). Keduanya digabung piksel-per-piksel: `Result = α × Blur + (1−α) × Original`. |
+| **8** | **Output** | File disimpan otomatis dengan sufiks `_filtered` di direktori yang sama dengan input. |
+
+### Formula Alpha Blending
+
+```
+Output(x, y) = α(x,y) × Blurred(x,y)  +  (1 − α(x,y)) × Original(x,y)
 ```
 
-> **Note**: Ensure you have a compatible version of Python (3.10 or newer) and a working C++ compiler for OpenCV binaries.
+> `α(x, y) ∈ [0.0, 1.0]` adalah nilai *feathered mask* pada koordinat piksel `(x, y)`. Nilai `1.0` berarti sepenuhnya blur; nilai `0.0` berarti citra asli utuh.
 
 ---
 
-## Usage
+## Visualisasi Output
 
-Run the script from the project root:
+### Gambar Statis — 4-Panel Dashboard
+
+Saat memproses gambar (`.jpg` / `.png`), program menampilkan satu jendela berisi **grid 2×2**:
+
+| Panel | Label Kode | Konten |
+|---|---|---|
+| **1** | `Panel 1 \| Original Image` | Frame asli tanpa modifikasi |
+| **2** | `Panel 2 \| Grayscale + Haar BBox` | Grayscale + bounding box hijau per wajah terdeteksi |
+| **3** | `Panel 3 \| Alpha Map (COLORMAP_OCEAN)` | Feathered mask divisualisasikan sebagai heatmap warna OCEAN |
+| **4** | `Panel 4 \| Final Result - Smooth Blur` | Output akhir: citra tersensor dengan gradasi halus |
+
+### Video — Dual Window Real-time
+
+Saat memproses video (`.mp4` / `.avi`), program menampilkan **dua jendela terpisah** secara real-time:
+
+- **Jendela Detection** — Grayscale + bounding box (Panel 2)
+- **Jendela Result** — Hasil akhir blur (Panel 4)
+
+Tekan `q` untuk menghentikan pemrosesan video lebih awal.
+
+---
+
+## Instalasi & Penggunaan
 
 ```bash
+# Install dependencies
+pip install opencv-python numpy
+
+# Jalankan program
 python img_filter.py
 ```
 
-The script will:
-1. Scan `input/` for image files.
-2. Process each image according to the filter pipeline.
-3. Save the output to `result/<original_name>.png`.
-4. (Optional) Display intermediate steps if `matplotlib` is installed.
+> `tkinter` sudah tersedia secara bawaan dalam instalasi standar Python. Haar Cascade XML disertakan langsung dalam paket `opencv-python`.
+
+**Format yang didukung:** `.jpg` `.jpeg` `.png` `.mp4` `.avi`
+
+**Output:** Disimpan otomatis di direktori yang sama dengan file input, dengan sufiks `_filtered`.
+Contoh: `foto.jpg` → `foto_filtered.jpg` | `video.mp4` → `video_filtered.mp4`
 
 ---
 
-## Workflow
+##  Hasil
 
-```
-[Input Images] → img_filter.py → Load (cv2.imread) → Apply Filters → Save (cv2.imwrite) → [result/]
-```
+> **Tentang folder `result/`:** Folder ini adalah **repositori referensi kualitas** yang menyimpan contoh-contoh hasil pemrosesan yang pernah dilakukan. Ini bukan direktori output program — file output selalu disimpan di lokasi yang sama dengan file input sumber.
 
-**Filter Pipeline**
-- Grayscale conversion
-- Gaussian blur
-- Canny edge detection
-- Histogram equalisation
-
----
-
-## Results
-
-The `result/` directory now contains the processed images. Below are previews of the current output files:
-
-| Image | Preview |
-|-------|---------|
-| 1.png | ![1](result/1.png) |
-| 2.png | ![2](result/2.png) |
-| 3.png | ![3](result/3.png) |
-| 4.png | ![4](result/4.png) |
-| 5.png | ![5](result/5.png) |
-
-You can open the images directly from the `result/` folder to evaluate the applied filters.
-
----
-
-*Generated by Antigravity – your AI coding assistant.*
-
-## Environment
-- **Programming Language:** Python 3.x
-- **Key Libraries:**
-  - `opencv-python` (cv2) – for image loading, filtering, and processing.
-  - `numpy` – array manipulation.
-  - `matplotlib` (optional) – for visualizing results.
-- **Operating System:** Windows (tested on Windows 10/11).
-- **Dependencies Installation:**
-  ```bash
-  pip install -r requirements.txt
-  # or manually
-  pip install opencv-python numpy matplotlib
-  ```
-
-## What the program does
-`img_filter.py` is a simple image‑processing pipeline that:
-1. **Loads** an input image (or a batch of images) from the `input/` directory.
-2. **Applies** a series of filters (e.g., grayscale conversion, Gaussian blur, edge detection, histogram equalisation). The exact filters are defined in the script.
-3. **Saves** the processed images to the `result/` folder.
-4. Optionally visualises intermediate steps using `matplotlib`.
-
-## System Flow (Input → Output)
-```
-[Input Image(s)]
-      │
-      ▼
-[img_filter.py] ──► Load image(s) with cv2.imread()
-      │
-      ▼
-[Apply Filters]
-      │   ├─ Grayscale conversion
-      │   ├─ Gaussian blur
-      │   ├─ Edge detection (Canny)
-      │   └─ Histogram equalisation
-      ▼
-[Save Results]
-      │   └─ cv2.imwrite() → e:/.../result/<image_name>.png
-      ▼
-[Result Folder]
-```
-
-## Results
-The `result/` directory contains the processed images produced by the script. Below is a list of the current output files:
-
-- `1.png`
-- `2.png`
-- `3.png`
-- `4.png`
-- `5.png`
-
-You can open these files directly from the `result/` folder to see the effect of the applied filters.
-
----
-*Generated by Antigravity – your AI coding assistant.*
+| ![](result/1.png) |
+| ![](result/2.png) |
+| ![](result/3.png) |
+| ![](result/4.png) |
+| ![](result/5.png) |
