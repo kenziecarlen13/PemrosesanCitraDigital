@@ -94,8 +94,8 @@ Contoh: `foto.jpg` → `foto_filtered.jpg` | `video.mp4` → `video_filtered.mp4
 
 > **Tentang folder `result/`:** Folder ini adalah **repositori referensi kualitas** yang menyimpan contoh-contoh hasil pemrosesan yang pernah dilakukan. Ini bukan direktori output program — file output selalu disimpan di lokasi yang sama dengan file input sumber.
 
-| ![](result/1.png) |
-| ![](result/2.png) |
-| ![](result/3.png) |
-| ![](result/4.png) |
-| ![](result/5.png) |
+![](result/1.png) 
+![](result/2.png) 
+![](result/3.png) 
+![](result/4.png) 
+![](result/5.png) 
