@@ -1,8 +1,8 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║   Face Privacy Filter - Haar Cascade + Ellipse Masking           ║
+║   Face Privacy Filter - Multiscale Haar Cascade                  ║
 ║   Mata Kuliah : Pemrosesan Citra Digital                         ║
-║   Metode      : Haar Cascade + Ellipse Masking + Alpha Blending  ║
+║   Metode      : Frontal + Profile Cascade + Ellipse + Alpha Blend║
 ║   Output      : 4-Panel Dashboard (cv2.imshow)                   ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
@@ -14,18 +14,21 @@ from tkinter import filedialog, messagebox
 import os
 import sys
 
+
 # ──────────────────────────────────────────────────────────────────
 #  KONFIGURASI PARAMETER  (ubah di sini untuk tuning)
 # ──────────────────────────────────────────────────────────────────
 
-# ── Haar Cascade ──────────────────────────────────────────────────
-CASCADE_PATH    = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-SCALE_FACTOR    = 1.10   # seberapa kecil citra di-scale tiap octave
-MIN_NEIGHBORS   = 5      # makin tinggi → makin sedikit false-positive
-MIN_FACE_SIZE   = 60     # ukuran wajah minimum (piksel)
+# ── Haar Cascade (Frontal + Profile) ──────────────────────────────
+FRONTAL_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+PROFILE_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_profileface.xml"
+SCALE_FACTOR         = 1.10   # seberapa kecil citra di-scale tiap octave
+MIN_NEIGHBORS        = 5      # makin tinggi → makin sedikit false-positive
+MIN_FACE_SIZE        = 60     # ukuran wajah minimum (piksel)
+OVERLAP_IOU_THRESH   = 0.40   # ambang IoU untuk menyatukan deteksi duplikat
 
 # ── Geometri Elips  ───────────────────────────────────────────────
-ELLIPSE_W_DIV   = 2.2    # setengah sumbu horizontal  = w / ELLIPSE_W_DIV
+ELLIPSE_W_DIV   = 2.0    # setengah sumbu horizontal  = w / ELLIPSE_W_DIV
 ELLIPSE_H_DIV   = 1.8    # setengah sumbu vertikal    = h / ELLIPSE_H_DIV
 ELLIPSE_Y_SHIFT = 0.05   # geser pusat elips ke bawah = h * shift
 
@@ -33,11 +36,11 @@ ELLIPSE_Y_SHIFT = 0.05   # geser pusat elips ke bawah = h * shift
 FEATHER_KSIZE   = 51     # kernel blur mask → pinggiran gradasi halus
 
 # ── Blur Privasi (Gaussian Blur pada citra asli) ──────────────────
-PRIVACY_KSIZE   = 71     # kernel blur gambar → intensitas sensor
+PRIVACY_KSIZE   = 125     # kernel blur gambar → intensitas sensor
 
 # ── Dashboard ─────────────────────────────────────────────────────
 DASHBOARD_MAX_W = 1280           # lebar maksimum jendela dashboard
-PANEL_GAP       = 5              # tebal garis pemisah antar panel (piksel)
+PANEL_GAP       = 7              # tebal garis pemisah antar panel (piksel)
 GAP_COLOR       = 15             # intensitas abu garis pemisah
 LABEL_COLOR     = (0, 255, 180)  # warna teks label panel (BGR)
 BBOX_COLOR      = (0, 220, 60)   # warna bounding-box Haar (BGR)
@@ -48,51 +51,140 @@ SUPPORTED_VIDEO_EXT = (".mp4", ".avi")
 
 
 # ──────────────────────────────────────────────────────────────────
-#  INISIALISASI HAAR CASCADE
+#  INISIALISASI HAAR CASCADE (Frontal + Profile)
 # ──────────────────────────────────────────────────────────────────
 
-def load_face_cascade() -> cv2.CascadeClassifier:
-    """Muat classifier; lempar RuntimeError jika file tidak ada."""
-    if not os.path.isfile(CASCADE_PATH):
+def _load_cascade(xml_path: str) -> cv2.CascadeClassifier:
+    """Muat satu CascadeClassifier; lempar RuntimeError jika gagal."""
+    if not os.path.isfile(xml_path):
         raise RuntimeError(
-            f"File Haar Cascade tidak ditemukan:\n{CASCADE_PATH}\n"
+            f"File Haar Cascade tidak ditemukan:\n{xml_path}\n"
             "Pastikan OpenCV terinstal lengkap."
         )
-    clf = cv2.CascadeClassifier(CASCADE_PATH)
+    clf = cv2.CascadeClassifier(xml_path)
     if clf.empty():
-        raise RuntimeError("CascadeClassifier gagal dimuat (file kosong/rusak).")
+        raise RuntimeError(f"CascadeClassifier gagal dimuat: {xml_path}")
     return clf
 
 
-face_cascade = load_face_cascade()
+frontal_cascade = _load_cascade(FRONTAL_CASCADE_PATH)
+profile_cascade = _load_cascade(PROFILE_CASCADE_PATH)
 
 
 # ──────────────────────────────────────────────────────────────────
-#  STEP 1 - DETEKSI WAJAH (Haar Cascade)
+#  HELPER - OVERLAP SUPPRESSION (IoU)
 # ──────────────────────────────────────────────────────────────────
 
-def detect_faces(frame_bgr: np.ndarray):
+def _compute_iou(box_a: tuple, box_b: tuple) -> float:
     """
-    Konversi BGR → Grayscale, lalu jalankan Haar detectMultiScale.
-    Kembalikan: (gray_image, list_of_faces)
-    Setiap elemen list_of_faces = (x, y, w, h).
+    Hitung Intersection over Union antara dua bounding box.
+    Format box: (x, y, w, h).
     """
-    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
 
-    # equalizeHist meningkatkan kontras agar deteksi lebih robust
-    gray_eq = cv2.equalizeHist(gray)
+    # Koordinat intersection
+    ix1 = max(ax, bx)
+    iy1 = max(ay, by)
+    ix2 = min(ax + aw, bx + bw)
+    iy2 = min(ay + ah, by + bh)
 
-    faces = face_cascade.detectMultiScale(
+    inter_w = max(0, ix2 - ix1)
+    inter_h = max(0, iy2 - iy1)
+    inter_area = inter_w * inter_h
+
+    # Union = area(A) + area(B) - intersection
+    union_area = (aw * ah) + (bw * bh) - inter_area
+    if union_area <= 0:
+        return 0.0
+    return inter_area / union_area
+
+
+def _suppress_overlaps(boxes: list, iou_thresh: float = OVERLAP_IOU_THRESH) -> list:
+    """
+    Buang deteksi duplikat: jika dua box tumpang-tindih (IoU > ambang),
+    simpan box dengan area lebih besar.
+    """
+    if len(boxes) <= 1:
+        return boxes
+
+    # Urutkan dari area terbesar agar prioritas tinggi diperiksa duluan
+    boxes = sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)
+    keep = []
+
+    for candidate in boxes:
+        is_duplicate = False
+        for kept in keep:
+            if _compute_iou(candidate, kept) > iou_thresh:
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            keep.append(candidate)
+
+    return keep
+
+
+# ──────────────────────────────────────────────────────────────────
+#  STEP 1 - DETEKSI WAJAH (Frontal + Profile Haar Cascade)
+# ──────────────────────────────────────────────────────────────────
+
+def _run_single_cascade(
+    cascade: cv2.CascadeClassifier,
+    gray_eq: np.ndarray,
+) -> list:
+    """
+    Jalankan satu classifier pada grayscale yang sudah di-equalize.
+    Kembalikan list of (x, y, w, h) atau list kosong.
+    """
+    detections = cascade.detectMultiScale(
         gray_eq,
         scaleFactor  = SCALE_FACTOR,
         minNeighbors = MIN_NEIGHBORS,
         minSize      = (MIN_FACE_SIZE, MIN_FACE_SIZE),
         flags        = cv2.CASCADE_SCALE_IMAGE,
     )
+    if not isinstance(detections, np.ndarray):
+        return []
+    return [tuple(d) for d in detections]
 
-    # Jika tidak ada wajah, kembalikan list kosong
-    if not isinstance(faces, np.ndarray):
-        faces = []
+
+def detect_faces(frame_bgr: np.ndarray):
+    """
+    Deteksi wajah menggunakan dua Haar Cascade secara bersamaan:
+      1. haarcascade_frontalface_default  - wajah menghadap depan
+      2. haarcascade_profileface          - wajah profil kiri
+      3. haarcascade_profileface (flipped) - wajah profil kanan
+
+    Preprocessing: BGR -> Grayscale -> equalizeHist (peningkatan kontras).
+    Post-processing: IoU-based overlap suppression agar satu wajah
+    tidak terdeteksi ganda oleh dua classifier berbeda.
+
+    Kembalikan: (gray_image, list_of_faces)
+    Setiap elemen list_of_faces = (x, y, w, h) dalam piksel.
+    """
+    img_w = frame_bgr.shape[1]
+    gray  = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+
+    # equalizeHist meningkatkan kontras agar deteksi lebih robust
+    gray_eq = cv2.equalizeHist(gray)
+
+    # ── 1. Deteksi wajah depan ───────────────────────────────────
+    frontal_faces = _run_single_cascade(frontal_cascade, gray_eq)
+
+    # ── 2. Deteksi profil kiri (cascade asli) ────────────────────
+    profile_left = _run_single_cascade(profile_cascade, gray_eq)
+
+    # ── 3. Deteksi profil kanan (mirror horizontal) ──────────────
+    #    Flip citra → jalankan cascade → mirror balik koordinat x
+    gray_eq_flip  = cv2.flip(gray_eq, 1)
+    profile_right_raw = _run_single_cascade(profile_cascade, gray_eq_flip)
+    profile_right = [
+        (img_w - x - w, y, w, h) for (x, y, w, h) in profile_right_raw
+    ]
+
+    # ── Gabungkan semua deteksi dan buang duplikat ────────────────
+    all_faces = frontal_faces + profile_left + profile_right
+    faces     = _suppress_overlaps(all_faces)
 
     return gray, faces
 
